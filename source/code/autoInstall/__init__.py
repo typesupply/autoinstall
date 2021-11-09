@@ -20,7 +20,7 @@ from mojo.subscriber import (
     registerRoboFontSubscriber,
     registerSubscriberEvent
 )
-from mojo.roboFont import AllFonts, CurrentFont
+from mojo.roboFont import AllFonts, CurrentFont, OpenFont
 
 DEBUG = ".robofontext" not in __file__.lower()
 
@@ -107,7 +107,6 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if toInstall:
             progressBar = self.windowStartProgressBar(len(toInstall) * installProgressIncrements)
             for font in toInstall:
-                print("install", os.path.basename(font.path))
                 installFont(font, progressBar)
                 setFontNeedsUpdate(font, False)
         self.windowUpdateInternalFontsTable()
@@ -182,7 +181,8 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.setFontNeedsUpdate(font)
 
     def adjunctFontKerningDidChange(self, info):
-        font = info["font"]
+        kerning = info["kerning"]
+        font = kerning.font
         self.setFontNeedsUpdate(font)
 
     def adjunctFontGroupsDidChange(self, info):
@@ -209,7 +209,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window = AutoInstallerWindowController(self)
 
     def autoInstallerAddCurrentFont(self, info):
-        self.setInternalFontsAutoInstallStates((font, True))
+        self.setInternalFontsAutoInstallStates([(CurrentFont(), True)])
 
     def autoInstallerAddOpenFonts(self, info):
         fonts = [(font, True) for font in AllFonts()]

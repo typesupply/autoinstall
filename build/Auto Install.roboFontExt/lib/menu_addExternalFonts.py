@@ -1,8 +1,6 @@
-from mojo.evens import publishEvent
-
-publishEvent(
-    "AutoInstaller.AddExternalFonts"
-)
+from mojo.events import publishEvent
 
 if __name__ == "__main__":
-    run()
+    publishEvent(
+        "AutoInstaller.AddExternalFonts"
+    )

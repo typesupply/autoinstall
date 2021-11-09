@@ -1,8 +1,6 @@
-from mojo.evens import publishEvent
-
-publishEvent(
-    "AutoInstaller.OpenWindow"
-)
+from mojo.events import publishEvent
 
 if __name__ == "__main__":
-    run()
+    publishEvent(
+        "AutoInstaller.OpenWindow"
+    )
