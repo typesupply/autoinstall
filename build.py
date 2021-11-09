@@ -14,7 +14,6 @@ menuItems = [
         preferredName="Show Window",
         shortKey=""
     ),
-    "----",
     dict(
         path="menu_addCurrentFont.py",
         preferredName="Install Current Font",
