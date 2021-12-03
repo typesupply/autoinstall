@@ -1,6 +1,10 @@
 """
 To Do:
-- delay between checking font and pushing to install?
+- make install options:
+    - timer after change
+    - on app exit
+    - on save
+- progress indicator in app menu bar?
 - reinstall button needs to work
 - allow adjusting the timer delay
 - install on leaving the app
@@ -66,7 +70,7 @@ def setFontNeedsUpdate(font, state):
 
 class AutoInstallerRoboFontSubscriber(Subscriber):
 
-    debug = True
+    debug = DEBUG
 
     def build(self):
         self.externalFonts = {}
@@ -145,6 +149,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     # Document Monitoring
 
     def fontDocumentDidOpen(self, info):
+        log("> subscriber.fontDocumentDidOpen")
         font = info["font"]
         if font.path in self.externalFonts:
             oldFont = self.externalFonts[font.path]
@@ -154,13 +159,16 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             setFontNeedsUpdate(font, True)
         self._installInternalFonts()
         self.windowUpdateInternalFontsTable()
+        log("< subscriber.fontDocumentDidOpen")
 
     def fontDocumentDidClose(self, info):
+        log("> subscriber.fontDocumentDidClose")
         font = info["font"]
         if fontIsAutoInstalled(font):
             self._removeInternalFont(font)
             uninstallFont(font)
         self.windowUpdateInternalFontsTable()
+        log("< subscriber.fontDocumentDidClose")
 
     # Font Monitoring
 
@@ -181,8 +189,12 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.setFontNeedsUpdate(font)
 
     def adjunctFontKerningDidChange(self, info):
-        kerning = info["kerning"]
-        font = kerning.font
+        font = info["font"]
+        # XXX
+        # this is a hack around a subscriber bug
+        # that I don't have time to look into.
+        if font is None:
+            font = CurrentFont()
         self.setFontNeedsUpdate(font)
 
     def adjunctFontGroupsDidChange(self, info):
@@ -318,7 +330,7 @@ def installFont(font, progressBar=None):
     fontPath = tempfile.mkstemp()[1] + ".otf"
     publishEvent(
         "fontWillTestInstall",
-        font=font,
+        font=font.asDefcon(),
         format="otf"
     )
     didGenerate = True
@@ -339,31 +351,7 @@ def installFont(font, progressBar=None):
     if progressBar is not None:
         progressBar.increment()
     # remove old
-    oldFontIdentifier = app._installedFonts.get(font)
-    if oldFontIdentifier is None:
-        oldFontIdentifier = {}
-        name = f"{font.info.familyName} {font.info.styleName}"
-        for font, info in app._installedFonts.items():
-            if info.get("name", "") == name:
-                oldFontIdentifier = info
-                break
-    oldFontPath = oldFontIdentifier.get("fontPath")
-    if oldFontPath is not None:
-        publishEvent(
-            "fontWillTestDeinstall",
-            font=font
-        )
-        fontInstaller.uninstallFont(oldFontPath)
-        if os.path.exists(oldFontPath):
-            os.remove(oldFontPath)
-        del app._installedFonts[font]
-        doodleTestInstalledFonts = dict(getDefault("DoodleTestInstalledFonts", {}))
-        del doodleTestInstalledFonts[oldFontPath]
-        setDefault("DoodleTestInstalledFonts", doodleTestInstalledFonts)
-        publishEvent(
-            "fontDidTestDeinstall",
-            font=font
-        )
+    uninstallFont(font)
     if progressBar is not None:
         progressBar.increment()
     # install new
@@ -383,7 +371,7 @@ def installFont(font, progressBar=None):
             print(report)
         publishEvent(
             "fontDidTestInstall",
-            font=font,
+            font=font.asDefcon(),
             format="otf",
             succes=didInstall,
             success=didInstall,
@@ -393,7 +381,32 @@ def installFont(font, progressBar=None):
         progressBar.increment()
 
 def uninstallFont(font):
-    font.testDeinstall()
+    app = AppKit.NSApp()
+    oldFontIdentifier = app._installedFonts.get(font.asDefcon())
+    if oldFontIdentifier is None:
+        oldFontIdentifier = {}
+        name = f"{font.info.familyName} {font.info.styleName}"
+        for font, info in app._installedFonts.items():
+            if info.get("name", "") == name:
+                oldFontIdentifier = info
+                break
+    oldFontPath = oldFontIdentifier.get("fontPath")
+    if oldFontPath is not None:
+        publishEvent(
+            "fontWillTestDeinstall",
+            font=font.asDefcon()
+        )
+        fontInstaller.uninstallFont(oldFontPath)
+        if os.path.exists(oldFontPath):
+            os.remove(oldFontPath)
+        del app._installedFonts[font.asDefcon()]
+        doodleTestInstalledFonts = dict(getDefault("DoodleTestInstalledFonts", {}))
+        del doodleTestInstalledFonts[oldFontPath]
+        setDefault("DoodleTestInstalledFonts", doodleTestInstalledFonts)
+        publishEvent(
+            "fontDidTestDeinstall",
+            font=font.asDefcon()
+        )
 
 # -------------
 # Custom Events
@@ -435,7 +448,7 @@ for event in customEventsToRegister:
     try:
         registerSubscriberEvent(**event)
     except AssertionError:
-        print(f"Already registered: {event['methodName']}")
+        log(f"Already registered: {event['methodName']}")
 
 registerRoboFontSubscriber(AutoInstallerRoboFontSubscriber)
 
@@ -632,7 +645,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.setInternalFontsAutoInstallStates(fonts)
 
     def internalFontsTableReinstallButtonCallback(self, sender):
-        print("xxx internalFontsTableReinstallButtonCallback")
+        log("xxx internalFontsTableReinstallButtonCallback")
 
     spinnerTimer = None
 
@@ -745,10 +758,9 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.removeExternalFontPaths(paths)
 
     def externalFontsTableReinstallButtonCallback(self, sender):
-        print("xxx internalFontsTableReinstallButtonCallback")
+        log("xxx internalFontsTableReinstallButtonCallback")
 
 if __name__ == "__main__":
     publishEvent(
         "AutoInstaller.OpenWindow"
     )
-
