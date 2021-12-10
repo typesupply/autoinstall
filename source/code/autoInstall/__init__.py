@@ -4,10 +4,12 @@ To Do:
     - timer after change
     - on app exit
     - on save
+- use selection change as a way to delay update
 - progress indicator in app menu bar?
 - reinstall button needs to work
 - allow adjusting the timer delay
-- install on leaving the app
+- external font list isn't updated
+  when a font from the list is opened
 """
 
 import os
@@ -114,6 +116,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
                 installFont(font, progressBar)
                 setFontNeedsUpdate(font, False)
         self.windowUpdateInternalFontsTable()
+        self.windowClearProgressSpinner()
         self.windowClearProgressBar()
         log("< subscriber._installInternalFonts")
 
@@ -122,10 +125,18 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     installTimer = None
     installTimerDelay = 5
 
+    def resetInstallTimer(self):
+        log("> subscriber.resetInstallTimer")
+        if self.installTimer is not None:
+            self.startInstallTimer()
+        log("< subscriber.resetInstallTimer")
+
     def stopInstallTimer(self):
+        log("> subscriber.stopInstallTimer")
         if self.installTimer is not None:
             self.installTimer.invalidate()
         self.installTimer = None
+        log("< subscriber.stopInstallTimer")
 
     def startInstallTimer(self):
         log("> subscriber.startInstallTimer")
@@ -173,6 +184,8 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     # Font Monitoring
 
     def setFontNeedsUpdate(self, font):
+        if font is None:
+            return
         log("> subscriber.setFontNeedsUpdate")
         if fontIsAutoInstalled(font):
             setFontNeedsUpdate(font, True)
@@ -181,37 +194,54 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         log("< subscriber.setFontNeedsUpdate")
 
     def adjunctFontDidChangeGlyphOrder(self, info):
+        log("> subscriber.adjunctFontDidChangeGlyphOrder")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontDidChangeGlyphOrder")
 
     def adjunctFontInfoDidChange(self, info):
+        log("> subscriber.adjunctFontInfoDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontInfoDidChange")
 
     def adjunctFontKerningDidChange(self, info):
+        log("> subscriber.adjunctFontKerningDidChange")
         font = info["font"]
-        # XXX
-        # this is a hack around a subscriber bug
-        # that I don't have time to look into.
-        if font is None:
-            font = CurrentFont()
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontKerningDidChange")
 
     def adjunctFontGroupsDidChange(self, info):
+        log("> subscriber.adjunctFontGroupsDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontGroupsDidChange")
 
     def adjunctFontFeaturesDidChange(self, info):
+        log("> subscriber.adjunctFontFeaturesDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontFeaturesDidChange")
 
     def adjunctFontLayersDidChangeLayer(self, info):
+        log("> subscriber.adjunctFontLayersDidChangeLayer")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontLayersDidChangeLayer")
 
     def adjunctFontLayersDidSetDefaultLayer(self, info):
+        log("> subscriber.adjunctFontLayersDidSetDefaultLayer")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontLayersDidSetDefaultLayer")
+
+    # App Monitoring
+
+    def roboFontWillResignActive(self, info):
+        log("> subscriber.roboFontWillResignActive")
+        self.stopInstallTimer()
+        self.installTimerFire_(None)
+        log("< subscriber.roboFontWillResignActive")
 
     # Menu Support
 
@@ -300,6 +330,11 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.removeObservedAdjunctObject(font.kerning)
         self.removeObservedAdjunctObject(font.groups)
         self.removeObservedAdjunctObject(font.asDefcon().layers)
+
+    def windowClearProgressSpinner(self):
+        if self.window is None:
+            return
+        self.window.clearProgressSpinner()
 
     def windowStartProgressSpinner(self):
         if self.window is None:
@@ -649,6 +684,12 @@ class AutoInstallerWindowController(ezui.WindowController):
 
     spinnerTimer = None
 
+    def clearProgressSpinner(self):
+        if self.spinnerTimer is not None:
+            self.spinnerTimer.invalidate()
+        self.timerProgressSpinner.set(0)
+        self.spinnerTimer = None
+
     def startProgressSpinner(self, count=None):
         self.timerProgressSpinner.set(0)
         if count is None:
@@ -662,7 +703,7 @@ class AutoInstallerWindowController(ezui.WindowController):
             dict(value=0, count=count),
             True
         )
-        self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count + 1)
+        self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count)
         self.timerProgressSpinner.set(0)
 
     def spinnerTimerFire_(self, timer):
@@ -673,8 +714,8 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.timerProgressSpinner.set(value)
         if value == count:
             timer.invalidate()
-        else:
-            info["value"] = value
+            value = 0
+        info["value"] = value
 
     def startProgressBar(self, count=None):
         self.timerProgressSpinner.set(0)
