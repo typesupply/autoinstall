@@ -4,7 +4,6 @@ To Do:
     - timer after change
     - on app exit
     - on save
-- use selection change as a way to delay update
 - progress indicator in app menu bar?
 - reinstall button needs to work
 - allow adjusting the timer delay
@@ -24,16 +23,31 @@ from mojo.events import publishEvent
 from mojo.subscriber import (
     Subscriber,
     registerRoboFontSubscriber,
+    registerGlyphEditorSubscriber,
     registerSubscriberEvent
 )
 from mojo.roboFont import AllFonts, CurrentFont, OpenFont
 
 DEBUG = ".robofontext" not in __file__.lower()
+DEBUG = False
+
+indent = ""
 
 def log(*args):
     if not DEBUG:
         return
-    print(*args)
+    global indent
+    if args:
+        a = args[0]
+        if isinstance(a, str):
+            if a.startswith(">"):
+                indent += " "
+    print(indent, *args)
+    if args:
+        a = args[0]
+        if isinstance(a, str):
+            if a.startswith("<"):
+                indent = indent[:-1]
 
 # --------------
 # Temp Lib Flags
@@ -66,9 +80,9 @@ def setFontNeedsUpdate(font, state):
     tempLib[needsUpdateKey] = state
 
 
-# ----------
-# Subscriber
-# ----------
+# -------------------
+# RoboFont Subscriber
+# -------------------
 
 class AutoInstallerRoboFontSubscriber(Subscriber):
 
@@ -243,6 +257,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.installTimerFire_(None)
         log("< subscriber.roboFontWillResignActive")
 
+    # Glyph Editor Activity
+
+    def autoInstallerGlyphEditorActivity(self, info):
+        log("> subscriber.autoInstallerGlyphEditorActivity")
+        self.resetInstallTimer()
+        log("< subscriber.autoInstallerGlyphEditorActivity")
+
     # Menu Support
 
     def autoInstallerOpenWindow(self, info):
@@ -350,6 +371,46 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if self.window is None:
             return
         self.window.startProgressBar(count=None)
+
+
+# -----------------------
+# Glyph Editor Subscriber
+# -----------------------
+
+class AutoInstallerGlyphEditorSubscriber(Subscriber):
+
+    debug = DEBUG
+
+    def genericActivity(self, info):
+        publishEvent(
+            "AutoInstaller.GlyphEditorActivity"
+        )
+
+    glyphEditorDidKeyDown = genericActivity
+    glyphEditorDidKeyUp = genericActivity
+    glyphEditorDidChangeModifiers = genericActivity
+    glyphEditorDidMouseDown = genericActivity
+    glyphEditorDidMouseUp = genericActivity
+    glyphEditorDidMouseDrag = genericActivity
+    glyphEditorDidRightMouseDown = genericActivity
+    glyphEditorDidRightMouseUp = genericActivity
+    glyphEditorDidRightMouseDrag = genericActivity
+    glyphEditorDidScale = genericActivity
+    glyphEditorWillScale = genericActivity
+    glyphEditorDidCopy = genericActivity
+    glyphEditorDidCopyAsComponent = genericActivity
+    glyphEditorDidCut = genericActivity
+    glyphEditorDidPaste = genericActivity
+    glyphEditorDidPasteSpecial = genericActivity
+    glyphEditorDidDelete = genericActivity
+    glyphEditorDidSelectAll = genericActivity
+    glyphEditorDidSelectAllAlternate = genericActivity
+    glyphEditorDidSelectAllControl = genericActivity
+    glyphEditorDidDeselectAll = genericActivity
+    glyphEditorDidUndo = genericActivity
+    glyphEditorGlyphDidChangeSelection = genericActivity
+
+
 
 # ---------
 # Installer
@@ -477,6 +538,9 @@ customEventsToRegister = [
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.AddExternalFonts"
     ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.GlyphEditorActivity"
+    ),
 ]
 
 for event in customEventsToRegister:
@@ -486,6 +550,7 @@ for event in customEventsToRegister:
         log(f"Already registered: {event['methodName']}")
 
 registerRoboFontSubscriber(AutoInstallerRoboFontSubscriber)
+registerGlyphEditorSubscriber(AutoInstallerGlyphEditorSubscriber)
 
 
 # ------
