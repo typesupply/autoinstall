@@ -28,6 +28,10 @@ from mojo.subscriber import (
 )
 from mojo.roboFont import AllFonts, CurrentFont, OpenFont
 
+# ---------
+# Debugging
+# ---------
+
 DEBUG = ".robofontext" not in __file__.lower()
 DEBUG = False
 
@@ -129,6 +133,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             for font in toInstall:
                 installFont(font, progressBar)
                 setFontNeedsUpdate(font, False)
+            self.windowClearProgressBar()
         self.windowUpdateInternalFontsTable()
         self.windowClearProgressSpinner()
         self.windowClearProgressBar()
@@ -362,15 +367,15 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             return
         self.window.startProgressSpinner(count=self.installTimerDelay)
 
+    def windowClearProgressBar(self):
+        if self.window is None:
+            return
+        self.window.clearProgressBar()
+
     def windowStartProgressBar(self, count):
         if self.window is None:
             return
         return self.window.startProgressBar(count=count)
-
-    def windowClearProgressBar(self):
-        if self.window is None:
-            return
-        self.window.startProgressBar(count=None)
 
 
 # -----------------------
@@ -687,8 +692,8 @@ class AutoInstallerWindowController(ezui.WindowController):
 
         windowDescription = dict(
             type="Window",
-            size=(300, 0),
-            title="Probe Launcher",
+            size=(300, "auto"),
+            title="Auto Install",
             contentDescription=windowContent,
             footerDescription=footerDescription
         )
@@ -752,6 +757,7 @@ class AutoInstallerWindowController(ezui.WindowController):
     def clearProgressSpinner(self):
         if self.spinnerTimer is not None:
             self.spinnerTimer.invalidate()
+        self.timerProgressSpinner.show(False)
         self.timerProgressSpinner.set(0)
         self.spinnerTimer = None
 
@@ -770,6 +776,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         )
         self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count)
         self.timerProgressSpinner.set(0)
+        self.timerProgressSpinner.show(True)
 
     def spinnerTimerFire_(self, timer):
         info = timer.userInfo()
@@ -782,13 +789,17 @@ class AutoInstallerWindowController(ezui.WindowController):
             value = 0
         info["value"] = value
 
+    def clearProgressBar(self):
+        self.installerProgressBar.set(0)
+        self.installerProgressBar.show(False)
+
     def startProgressBar(self, count=None):
-        self.timerProgressSpinner.set(0)
         self.installerProgressBar.set(0)
         if count is None:
             return
         self.installerProgressBar.getNSProgressIndicator().setMaxValue_(count)
         self.installerProgressBar.set(0)
+        self.installerProgressBar.show(True)
         return self.installerProgressBar
 
     # External Fonts
@@ -865,6 +876,7 @@ class AutoInstallerWindowController(ezui.WindowController):
 
     def externalFontsTableReinstallButtonCallback(self, sender):
         log("xxx internalFontsTableReinstallButtonCallback")
+
 
 if __name__ == "__main__":
     publishEvent(
