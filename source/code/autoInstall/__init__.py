@@ -1,12 +1,7 @@
 """
 To Do:
-- make install options:
-    - timer after change
-    - on app exit
-    - on save
 - progress indicator in app menu bar?
 - reinstall button needs to work
-- allow adjusting the timer delay
 - external font list isn't updated
   when a font from the list is opened
 """
@@ -19,14 +14,27 @@ import vanilla
 import ezui
 from lib.tools import fontInstaller
 from mojo.UI import getDefault, setDefault
-from mojo.events import publishEvent
+from mojo.events import (
+    publishEvent,
+    addObserver,
+    removeObserver
+)
 from mojo.subscriber import (
     Subscriber,
     registerRoboFontSubscriber,
     registerGlyphEditorSubscriber,
     registerSubscriberEvent
 )
+from mojo.extensions import (
+    registerExtensionDefaults,
+    getExtensionDefault,
+    setExtensionDefault,
+    removeExtensionDefault
+)
+from mojo.events import postEvent
 from mojo.roboFont import AllFonts, CurrentFont, OpenFont
+
+extensionIdentifier = "com.typesupply.AutoInstall"
 
 # ---------
 # Debugging
@@ -84,6 +92,23 @@ def setFontNeedsUpdate(font, state):
     tempLib[needsUpdateKey] = state
 
 
+# --------
+# Defaults
+# --------
+
+defaults = dict(
+    installAfterChangeDelay=5,
+    installAfterSave=False,
+    installAfterAppExit=True
+)
+
+defaults = {
+    extensionIdentifier + "." + key : value
+    for key, value in defaults.items()
+}
+
+registerExtensionDefaults(defaults)
+
 # -------------------
 # RoboFont Subscriber
 # -------------------
@@ -94,6 +119,12 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
 
     def build(self):
         self.externalFonts = {}
+        self.loadDefaults()
+        addObserver(
+            self,
+            "extensionDefaultsChanged",
+            extensionIdentifier + ".defaultsChanged"
+        )
 
     def started(self):
         log("> subscriber.started")
@@ -116,6 +147,17 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             font.close()
         self.externalFonts = {}
         log("< subscriber.destroy")
+
+    # defaults
+
+    def loadDefaults(self):
+        self.installAfterChangeDelay = getExtensionDefault(extensionIdentifier + ".installAfterChangeDelay")
+        self.installAfterSave = getExtensionDefault(extensionIdentifier + ".installAfterSave")
+        self.installAfterAppExit = getExtensionDefault(extensionIdentifier + ".installAfterAppExit")
+        self.resetInstallTimer()
+
+    def extensionDefaultsChanged(self, event):
+        self.loadDefaults()
 
     # Install
 
@@ -142,7 +184,6 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     # Timer
 
     installTimer = None
-    installTimerDelay = 5
 
     def resetInstallTimer(self):
         log("> subscriber.resetInstallTimer")
@@ -158,10 +199,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         log("< subscriber.stopInstallTimer")
 
     def startInstallTimer(self):
+        delay = self.installAfterChangeDelay
+        if not delay:
+            return
         log("> subscriber.startInstallTimer")
         self.stopInstallTimer()
         self.installTimer = AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            self.installTimerDelay,
+            delay,
             self,
             "installTimerFire:",
             None,
@@ -199,6 +243,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             uninstallFont(font)
         self.windowUpdateInternalFontsTable()
         log("< subscriber.fontDocumentDidClose")
+
+    def fontDocumentDidSave(self, info):
+        if not self.installAfterSave:
+            return
+        log("> subscriber.fontDocumentDidSave")
+        self._installInternalFonts()
+        log("< subscriber.fontDocumentDidSave")
 
     # Font Monitoring
 
@@ -257,6 +308,8 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     # App Monitoring
 
     def roboFontWillResignActive(self, info):
+        if not self.installAfterAppExit:
+            return
         log("> subscriber.roboFontWillResignActive")
         self.stopInstallTimer()
         self.installTimerFire_(None)
@@ -291,9 +344,15 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if paths:
             self.addExternalFontPaths(paths)
 
+    def autoInstallerOpenDefaultsWindow(self, info):
+        if self.defaultsWindow is not None:
+            return
+        self.defaultsWindow = AutoInstallerDefaultsWindowController(self)
+
     # Window Support
 
     window = None
+    defaultsWindow = None
 
     def windowUpdateInternalFontsTable(self):
         if self.window is None:
@@ -365,7 +424,10 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
     def windowStartProgressSpinner(self):
         if self.window is None:
             return
-        self.window.startProgressSpinner(count=self.installTimerDelay)
+        delay = self.installAfterChangeDelay
+        if not delay:
+            return
+        self.window.startProgressSpinner(count=delay)
 
     def windowClearProgressBar(self):
         if self.window is None:
@@ -546,6 +608,9 @@ customEventsToRegister = [
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.GlyphEditorActivity"
     ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.OpenDefaultsWindow"
+    ),
 ]
 
 for event in customEventsToRegister:
@@ -706,8 +771,8 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.updateInternalFontsTable()
         self.installerProgressBar = self.w.findItem("installerProgressBar")
         self.timerProgressSpinner = self.w.findItem("timerProgressSpinner")
-        # self.installerProgressBar.show(False)
-        # self.timerProgressSpinner.show(False)
+        self.installerProgressBar.show(False)
+        self.timerProgressSpinner.show(False)
         self.w.open()
 
     def destroy(self):
@@ -878,7 +943,87 @@ class AutoInstallerWindowController(ezui.WindowController):
         log("xxx internalFontsTableReinstallButtonCallback")
 
 
+# ------------
+# Prefs Window
+# ------------
+
+class AutoInstallerDefaultsWindowController(ezui.WindowController):
+
+    def build(self, subscriber):
+        self.subscriber = subscriber
+        extensionIdentifierLength = len(extensionIdentifier) + 1
+        settings = {
+            key[extensionIdentifierLength:] : getExtensionDefault(key)
+            for key in defaults.keys()
+        }
+
+        formContents = dict(
+            identifier="settingsForm",
+            type="OneColumnForm",
+            contentDescriptions=[
+                "# Update Install",
+                dict(
+                    identifier="installAfterChangeDelay",
+                    type="TextField",
+                    trailingText="seconds after a change",
+                    value=settings["installAfterChangeDelay"],
+                    valueType="integer",
+                    width=185
+                ),
+                dict(
+                    identifier="installAfterSave",
+                    type="Checkbox",
+                    text="after saving the font",
+                    value=settings["installAfterSave"]
+                ),
+                dict(
+                    identifier="installAfterAppExit",
+                    type="Checkbox",
+                    text="after exiting RoboFont",
+                    value=settings["installAfterAppExit"]
+                )
+
+            ]
+        )
+
+        windowDescription = dict(
+            type="Window",
+            # title="Auto Installer Settings",
+            size="auto",
+            contentDescription=formContents
+        )
+
+        self.w = ezui.makeItem(
+            windowDescription,
+            controller=self
+        )
+
+    def started(self):
+        self.w.open()
+
+    def windowWillClose(self, sender):
+        self.subscriber.defaultsWindow = None
+        self.subscriber = None
+
+    def settingsFormCallback(self, sender):
+        self.storeSettings()
+
+    def storeSettings(self):
+        settings = self.w.get()["settingsForm"]
+        if settings["installAfterChangeDelay"] is None:
+            return
+        for key, value in settings.items():
+            key = extensionIdentifier + "." + key
+            setExtensionDefault(key, value)
+        postEvent(
+            extensionIdentifier + ".defaultsChanged"
+        )
+
+
 if __name__ == "__main__":
     publishEvent(
         "AutoInstaller.OpenWindow"
     )
+    # publishEvent(
+    #     "AutoInstaller.OpenDefaultsWindow"
+    # )
