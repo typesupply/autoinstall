@@ -62,6 +62,8 @@ autoInstallKey = keyStub + "autoInstall"
 needsUpdateKey = keyStub + "needsUpdate"
 
 def getTempLib(font):
+    if font is None:
+        return {}
     tempLib = font.asDefcon().tempLib
     return tempLib
 
