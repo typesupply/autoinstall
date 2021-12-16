@@ -975,6 +975,8 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
         if self._subscriber is not None:
             return self._subscriber()
 
+    subscriber = property(_get_subscriber)
+
     def build(self, subscriber):
         if subscriber is not None:
             self._subscriber = weakref.ref(subscriber)
