@@ -1,15 +1,3 @@
-"""
-To Do:
-- make install options:
-    - timer after change
-    - on app exit
-    - on save
-- progress indicator in app menu bar?
-- reinstall button needs to work
-- allow adjusting the timer delay
-- install on leaving the app
-"""
-
 import os
 import weakref
 import tempfile
@@ -18,26 +6,58 @@ import vanilla
 import ezui
 from lib.tools import fontInstaller
 from mojo.UI import getDefault, setDefault
-from mojo.events import publishEvent
+from mojo.events import (
+    publishEvent,
+    addObserver,
+    removeObserver
+)
 from mojo.subscriber import (
     Subscriber,
     registerRoboFontSubscriber,
+    registerGlyphEditorSubscriber,
     registerSubscriberEvent
 )
+from mojo.extensions import (
+    registerExtensionDefaults,
+    getExtensionDefault,
+    setExtensionDefault,
+    removeExtensionDefault
+)
+from mojo.events import postEvent
 from mojo.roboFont import AllFonts, CurrentFont, OpenFont
 
+extensionIdentifier = "com.typesupply.AutoInstall"
+
+# ---------
+# Debugging
+# ---------
+
 DEBUG = ".robofontext" not in __file__.lower()
+DEBUG = False
+
+indent = ""
 
 def log(*args):
     if not DEBUG:
         return
-    print(*args)
+    global indent
+    if args:
+        a = args[0]
+        if isinstance(a, str):
+            if a.startswith(">"):
+                indent += " "
+    print(indent, *args)
+    if args:
+        a = args[0]
+        if isinstance(a, str):
+            if a.startswith("<"):
+                indent = indent[:-1]
 
 # --------------
 # Temp Lib Flags
 # --------------
 
-keyStub = "com.typesupply.autoInstaller."
+keyStub = extensionIdentifier + "."
 autoInstallKey = keyStub + "autoInstall"
 needsUpdateKey = keyStub + "needsUpdate"
 
@@ -64,9 +84,26 @@ def setFontNeedsUpdate(font, state):
     tempLib[needsUpdateKey] = state
 
 
-# ----------
-# Subscriber
-# ----------
+# --------
+# Defaults
+# --------
+
+defaults = dict(
+    installAfterChangeDelay=5,
+    installAfterSave=False,
+    installAfterAppExit=True
+)
+
+defaults = {
+    extensionIdentifier + "." + key : value
+    for key, value in defaults.items()
+}
+
+registerExtensionDefaults(defaults)
+
+# -------------------
+# RoboFont Subscriber
+# -------------------
 
 class AutoInstallerRoboFontSubscriber(Subscriber):
 
@@ -74,6 +111,12 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
 
     def build(self):
         self.externalFonts = {}
+        self.loadDefaults()
+        addObserver(
+            self,
+            "extensionDefaultsChanged",
+            extensionIdentifier + ".defaultsChanged"
+        )
 
     def started(self):
         log("> subscriber.started")
@@ -97,6 +140,17 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.externalFonts = {}
         log("< subscriber.destroy")
 
+    # defaults
+
+    def loadDefaults(self):
+        self.installAfterChangeDelay = getExtensionDefault(extensionIdentifier + ".installAfterChangeDelay")
+        self.installAfterSave = getExtensionDefault(extensionIdentifier + ".installAfterSave")
+        self.installAfterAppExit = getExtensionDefault(extensionIdentifier + ".installAfterAppExit")
+        self.resetInstallTimer()
+
+    def extensionDefaultsChanged(self, event):
+        self.loadDefaults()
+
     # Install
 
     def _installInternalFonts(self):
@@ -113,25 +167,44 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             for font in toInstall:
                 installFont(font, progressBar)
                 setFontNeedsUpdate(font, False)
+            self.windowClearProgressBar()
         self.windowUpdateInternalFontsTable()
+        self.windowClearProgressSpinner()
         self.windowClearProgressBar()
         log("< subscriber._installInternalFonts")
+
+    def installInternalFontsNow(self, fonts):
+        self.stopInstallTimer()
+        self.windowClearProgressSpinner()
+        for font in fonts:
+            setFontNeedsUpdate(font, True)
+        self._installInternalFonts()
 
     # Timer
 
     installTimer = None
-    installTimerDelay = 5
+
+    def resetInstallTimer(self):
+        log("> subscriber.resetInstallTimer")
+        if self.installTimer is not None:
+            self.startInstallTimer()
+        log("< subscriber.resetInstallTimer")
 
     def stopInstallTimer(self):
+        log("> subscriber.stopInstallTimer")
         if self.installTimer is not None:
             self.installTimer.invalidate()
         self.installTimer = None
+        log("< subscriber.stopInstallTimer")
 
     def startInstallTimer(self):
+        delay = self.installAfterChangeDelay
+        if not delay:
+            return
         log("> subscriber.startInstallTimer")
         self.stopInstallTimer()
         self.installTimer = AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            self.installTimerDelay,
+            delay,
             self,
             "installTimerFire:",
             None,
@@ -159,6 +232,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             setFontNeedsUpdate(font, True)
         self._installInternalFonts()
         self.windowUpdateInternalFontsTable()
+        self.windowUpdateExternalFontsTable()
         log("< subscriber.fontDocumentDidOpen")
 
     def fontDocumentDidClose(self, info):
@@ -170,9 +244,18 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.windowUpdateInternalFontsTable()
         log("< subscriber.fontDocumentDidClose")
 
+    def fontDocumentDidSave(self, info):
+        if not self.installAfterSave:
+            return
+        log("> subscriber.fontDocumentDidSave")
+        self._installInternalFonts()
+        log("< subscriber.fontDocumentDidSave")
+
     # Font Monitoring
 
     def setFontNeedsUpdate(self, font):
+        if font is None:
+            return
         log("> subscriber.setFontNeedsUpdate")
         if fontIsAutoInstalled(font):
             setFontNeedsUpdate(font, True)
@@ -181,37 +264,63 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         log("< subscriber.setFontNeedsUpdate")
 
     def adjunctFontDidChangeGlyphOrder(self, info):
+        log("> subscriber.adjunctFontDidChangeGlyphOrder")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontDidChangeGlyphOrder")
 
     def adjunctFontInfoDidChange(self, info):
+        log("> subscriber.adjunctFontInfoDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontInfoDidChange")
 
     def adjunctFontKerningDidChange(self, info):
+        log("> subscriber.adjunctFontKerningDidChange")
         font = info["font"]
-        # XXX
-        # this is a hack around a subscriber bug
-        # that I don't have time to look into.
-        if font is None:
-            font = CurrentFont()
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontKerningDidChange")
 
     def adjunctFontGroupsDidChange(self, info):
+        log("> subscriber.adjunctFontGroupsDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontGroupsDidChange")
 
     def adjunctFontFeaturesDidChange(self, info):
+        log("> subscriber.adjunctFontFeaturesDidChange")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontFeaturesDidChange")
 
     def adjunctFontLayersDidChangeLayer(self, info):
+        log("> subscriber.adjunctFontLayersDidChangeLayer")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontLayersDidChangeLayer")
 
     def adjunctFontLayersDidSetDefaultLayer(self, info):
+        log("> subscriber.adjunctFontLayersDidSetDefaultLayer")
         font = info["font"]
         self.setFontNeedsUpdate(font)
+        log("< subscriber.adjunctFontLayersDidSetDefaultLayer")
+
+    # App Monitoring
+
+    def roboFontWillResignActive(self, info):
+        if not self.installAfterAppExit:
+            return
+        log("> subscriber.roboFontWillResignActive")
+        self.stopInstallTimer()
+        self.installTimerFire_(None)
+        log("< subscriber.roboFontWillResignActive")
+
+    # Glyph Editor Activity
+
+    def autoInstallerGlyphEditorActivity(self, info):
+        log("> subscriber.autoInstallerGlyphEditorActivity")
+        self.resetInstallTimer()
+        log("< subscriber.autoInstallerGlyphEditorActivity")
 
     # Menu Support
 
@@ -219,6 +328,8 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if self.window is not None:
             return
         self.window = AutoInstallerWindowController(self)
+        self.windowUpdateInternalFontsTable()
+        self.windowUpdateExternalFontsTable()
 
     def autoInstallerAddCurrentFont(self, info):
         self.setInternalFontsAutoInstallStates([(CurrentFont(), True)])
@@ -235,9 +346,15 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if paths:
             self.addExternalFontPaths(paths)
 
+    def autoInstallerOpenDefaultsWindow(self, info):
+        if self.defaultsWindow is not None:
+            return
+        self.defaultsWindow = AutoInstallerDefaultsWindowController(self)
+
     # Window Support
 
     window = None
+    defaultsWindow = None
 
     def windowUpdateInternalFontsTable(self):
         if self.window is None:
@@ -250,14 +367,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window.updateExternalFontsTable()
 
     def addExternalFontPaths(self, paths):
-        progressBar = self.windowStartProgressBar(len(paths) * (installProgressIncrements + 1))
-        for path in paths:
-            font = OpenFont(path, showInterface=False)
-            if progressBar is not None:
-                progressBar.increment()
-            self.externalFonts[path] = font
-            installFont(font, progressBar)
-        self.windowClearProgressBar()
+        self.installExternalFontsNow(paths)
         self.windowUpdateExternalFontsTable()
 
     def getExternalFontPaths(self):
@@ -301,20 +411,80 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.removeObservedAdjunctObject(font.groups)
         self.removeObservedAdjunctObject(font.asDefcon().layers)
 
+    def windowClearProgressSpinner(self):
+        if self.window is None:
+            return
+        self.window.clearProgressSpinner()
+
     def windowStartProgressSpinner(self):
         if self.window is None:
             return
-        self.window.startProgressSpinner(count=self.installTimerDelay)
+        delay = self.installAfterChangeDelay
+        if not delay:
+            return
+        self.window.startProgressSpinner(count=delay)
+
+    def windowClearProgressBar(self):
+        if self.window is None:
+            return
+        self.window.clearProgressBar()
 
     def windowStartProgressBar(self, count):
         if self.window is None:
             return
         return self.window.startProgressBar(count=count)
 
-    def windowClearProgressBar(self):
-        if self.window is None:
-            return
-        self.window.startProgressBar(count=None)
+    # External Fonts
+
+    def installExternalFontsNow(self, paths):
+        progressBar = self.windowStartProgressBar(len(paths) * (installProgressIncrements + 1))
+        for path in paths:
+            if progressBar is not None:
+                progressBar.increment()
+            if path not in self.externalFonts:
+                self.externalFonts[path] = OpenFont(path, showInterface=False)
+            font = self.externalFonts[path]
+            installFont(font, progressBar)
+        self.windowClearProgressBar()
+
+# -----------------------
+# Glyph Editor Subscriber
+# -----------------------
+
+class AutoInstallerGlyphEditorSubscriber(Subscriber):
+
+    debug = DEBUG
+
+    def genericActivity(self, info):
+        publishEvent(
+            "AutoInstaller.GlyphEditorActivity"
+        )
+
+    glyphEditorDidKeyDown = genericActivity
+    glyphEditorDidKeyUp = genericActivity
+    glyphEditorDidChangeModifiers = genericActivity
+    glyphEditorDidMouseDown = genericActivity
+    glyphEditorDidMouseUp = genericActivity
+    glyphEditorDidMouseDrag = genericActivity
+    glyphEditorDidRightMouseDown = genericActivity
+    glyphEditorDidRightMouseUp = genericActivity
+    glyphEditorDidRightMouseDrag = genericActivity
+    glyphEditorDidScale = genericActivity
+    glyphEditorWillScale = genericActivity
+    glyphEditorDidCopy = genericActivity
+    glyphEditorDidCopyAsComponent = genericActivity
+    glyphEditorDidCut = genericActivity
+    glyphEditorDidPaste = genericActivity
+    glyphEditorDidPasteSpecial = genericActivity
+    glyphEditorDidDelete = genericActivity
+    glyphEditorDidSelectAll = genericActivity
+    glyphEditorDidSelectAllAlternate = genericActivity
+    glyphEditorDidSelectAllControl = genericActivity
+    glyphEditorDidDeselectAll = genericActivity
+    glyphEditorDidUndo = genericActivity
+    glyphEditorGlyphDidChangeSelection = genericActivity
+
+
 
 # ---------
 # Installer
@@ -442,6 +612,12 @@ customEventsToRegister = [
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.AddExternalFonts"
     ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.GlyphEditorActivity"
+    ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.OpenDefaultsWindow"
+    ),
 ]
 
 for event in customEventsToRegister:
@@ -451,6 +627,7 @@ for event in customEventsToRegister:
         log(f"Already registered: {event['methodName']}")
 
 registerRoboFontSubscriber(AutoInstallerRoboFontSubscriber)
+registerGlyphEditorSubscriber(AutoInstallerGlyphEditorSubscriber)
 
 
 # ------
@@ -512,7 +689,7 @@ class AutoInstallerWindowController(ezui.WindowController):
                 dict(
                     identifier="internalFontsTableReinstallButton",
                     type="PushButton",
-                    text="Reinstall",
+                    text="Update",
                     gravity="trailing"
                 )
             ]
@@ -545,7 +722,7 @@ class AutoInstallerWindowController(ezui.WindowController):
                 dict(
                     identifier="externalFontsTableReinstallButton",
                     type="PushButton",
-                    text="Reinstall",
+                    text="Update",
                     gravity="trailing"
                 )
             ],
@@ -587,8 +764,9 @@ class AutoInstallerWindowController(ezui.WindowController):
 
         windowDescription = dict(
             type="Window",
-            size=(300, 0),
-            title="Probe Launcher",
+            size=(300, "auto"),
+            title="Auto Install",
+            identifier=extensionIdentifier + ".MainWindow",
             contentDescription=windowContent,
             footerDescription=footerDescription
         )
@@ -601,8 +779,8 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.updateInternalFontsTable()
         self.installerProgressBar = self.w.findItem("installerProgressBar")
         self.timerProgressSpinner = self.w.findItem("timerProgressSpinner")
-        # self.installerProgressBar.show(False)
-        # self.timerProgressSpinner.show(False)
+        self.installerProgressBar.show(False)
+        self.timerProgressSpinner.show(False)
         self.w.open()
 
     def destroy(self):
@@ -645,9 +823,22 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.setInternalFontsAutoInstallStates(fonts)
 
     def internalFontsTableReinstallButtonCallback(self, sender):
-        log("xxx internalFontsTableReinstallButtonCallback")
+        table = self.w.findItem("internalFontsTable")
+        items = table.getSelectedItems()
+        if not items:
+            items = table.get()
+        fonts = [item["font"] for item in items]
+        if fonts:
+            self.subscriber.installInternalFontsNow(fonts)
 
     spinnerTimer = None
+
+    def clearProgressSpinner(self):
+        if self.spinnerTimer is not None:
+            self.spinnerTimer.invalidate()
+        self.timerProgressSpinner.show(False)
+        self.timerProgressSpinner.set(0)
+        self.spinnerTimer = None
 
     def startProgressSpinner(self, count=None):
         self.timerProgressSpinner.set(0)
@@ -662,8 +853,9 @@ class AutoInstallerWindowController(ezui.WindowController):
             dict(value=0, count=count),
             True
         )
-        self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count + 1)
+        self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count)
         self.timerProgressSpinner.set(0)
+        self.timerProgressSpinner.show(True)
 
     def spinnerTimerFire_(self, timer):
         info = timer.userInfo()
@@ -673,16 +865,20 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.timerProgressSpinner.set(value)
         if value == count:
             timer.invalidate()
-        else:
-            info["value"] = value
+            value = 0
+        info["value"] = value
+
+    def clearProgressBar(self):
+        self.installerProgressBar.set(0)
+        self.installerProgressBar.show(False)
 
     def startProgressBar(self, count=None):
-        self.timerProgressSpinner.set(0)
         self.installerProgressBar.set(0)
         if count is None:
             return
         self.installerProgressBar.getNSProgressIndicator().setMaxValue_(count)
         self.installerProgressBar.set(0)
+        self.installerProgressBar.show(True)
         return self.installerProgressBar
 
     # External Fonts
@@ -758,7 +954,98 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.removeExternalFontPaths(paths)
 
     def externalFontsTableReinstallButtonCallback(self, sender):
-        log("xxx internalFontsTableReinstallButtonCallback")
+        table = self.w.findItem("externalFontsTable")
+        items = table.getSelectedItems()
+        if not items:
+            items = table.get()
+        paths = [item["path"] for item in items]
+        if paths:
+            self.subscriber.installExternalFontsNow(paths)
+
+
+# ------------
+# Prefs Window
+# ------------
+
+class AutoInstallerDefaultsWindowController(ezui.WindowController):
+
+    def _get_subscriber(self):
+        if self._subscriber is not None:
+            return self._subscriber()
+
+    def build(self, subscriber):
+        if subscriber is not None:
+            self._subscriber = weakref.ref(subscriber)
+
+        extensionIdentifierLength = len(extensionIdentifier) + 1
+        settings = {
+            key[extensionIdentifierLength:] : getExtensionDefault(key)
+            for key in defaults.keys()
+        }
+
+        formContents = dict(
+            identifier="settingsForm",
+            type="OneColumnForm",
+            contentDescriptions=[
+                "# Update Install",
+                dict(
+                    identifier="installAfterChangeDelay",
+                    type="TextField",
+                    trailingText="seconds after a change",
+                    value=settings["installAfterChangeDelay"],
+                    valueType="integer",
+                    width=185
+                ),
+                dict(
+                    identifier="installAfterSave",
+                    type="Checkbox",
+                    text="after saving the font",
+                    value=settings["installAfterSave"]
+                ),
+                dict(
+                    identifier="installAfterAppExit",
+                    type="Checkbox",
+                    text="after exiting RoboFont",
+                    value=settings["installAfterAppExit"]
+                )
+
+            ]
+        )
+
+        windowDescription = dict(
+            type="Window",
+            # title="Auto Installer Settings",
+            identifier=extensionIdentifier + ".DefaultsWindow",
+            size="auto",
+            contentDescription=formContents
+        )
+
+        self.w = ezui.makeItem(
+            windowDescription,
+            controller=self
+        )
+
+    def started(self):
+        self.w.open()
+
+    def windowWillClose(self, sender):
+        self.subscriber.defaultsWindow = None
+        self.subscriber = None
+
+    def settingsFormCallback(self, sender):
+        self.storeSettings()
+
+    def storeSettings(self):
+        settings = self.w.get()["settingsForm"]
+        if settings["installAfterChangeDelay"] is None:
+            return
+        for key, value in settings.items():
+            key = extensionIdentifier + "." + key
+            setExtensionDefault(key, value)
+        postEvent(
+            extensionIdentifier + ".defaultsChanged"
+        )
+
 
 if __name__ == "__main__":
     publishEvent(

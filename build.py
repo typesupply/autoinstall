@@ -6,12 +6,12 @@ name = "Auto Install"
 version = "0.1"
 developer = "Type Supply"
 developerURL = "http://typesupply.com"
-roboFontVersion = "4.0"
+roboFontVersion = "4.2"
 pycOnly = False
 menuItems = [
     dict(
         path="menu_openWindow.py",
-        preferredName="Show Window",
+        preferredName="Window",
         shortKey=""
     ),
     dict(
@@ -21,7 +21,7 @@ menuItems = [
     ),
     dict(
         path="menu_addOpenFonts.py",
-        preferredName="Install Open Fonts",
+        preferredName="Install All Open Fonts",
         shortKey=""
     ),
     dict(
@@ -31,7 +31,7 @@ menuItems = [
     ),
     dict(
         path="menu_openDefaultsWindow.py",
-        preferredName="Settings",
+        preferredName="Edit Preferences",
         shortKey=""
     ),
 ]

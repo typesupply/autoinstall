@@ -328,6 +328,8 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if self.window is not None:
             return
         self.window = AutoInstallerWindowController(self)
+        self.windowUpdateInternalFontsTable()
+        self.windowUpdateExternalFontsTable()
 
     def autoInstallerAddCurrentFont(self, info):
         self.setInternalFontsAutoInstallStates([(CurrentFont(), True)])
@@ -764,6 +766,7 @@ class AutoInstallerWindowController(ezui.WindowController):
             type="Window",
             size=(300, "auto"),
             title="Auto Install",
+            identifier=extensionIdentifier + ".MainWindow",
             contentDescription=windowContent,
             footerDescription=footerDescription
         )
@@ -1012,6 +1015,7 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
         windowDescription = dict(
             type="Window",
             # title="Auto Installer Settings",
+            identifier=extensionIdentifier + ".DefaultsWindow",
             size="auto",
             contentDescription=formContents
         )

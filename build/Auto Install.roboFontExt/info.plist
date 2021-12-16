@@ -8,7 +8,7 @@
 			<key>path</key>
 			<string>menu_openWindow.py</string>
 			<key>preferredName</key>
-			<string>Show Window</string>
+			<string>Window</string>
 			<key>shortKey</key>
 			<string></string>
 		</dict>
@@ -24,7 +24,7 @@
 			<key>path</key>
 			<string>menu_addOpenFonts.py</string>
 			<key>preferredName</key>
-			<string>Install Open Fonts</string>
+			<string>Install All Open Fonts</string>
 			<key>shortKey</key>
 			<string></string>
 		</dict>
@@ -36,13 +36,21 @@
 			<key>shortKey</key>
 			<string></string>
 		</dict>
+		<dict>
+			<key>path</key>
+			<string>menu_openDefaultsWindow.py</string>
+			<key>preferredName</key>
+			<string>Edit Preferences</string>
+			<key>shortKey</key>
+			<string></string>
+		</dict>
 	</array>
 	<key>developer</key>
 	<string>Type Supply</string>
 	<key>developerURL</key>
 	<string>http://typesupply.com</string>
 	<key>html</key>
-	<false/>
+	<true/>
 	<key>launchAtStartUp</key>
 	<true/>
 	<key>mainScript</key>
@@ -52,9 +60,9 @@
 	<key>requiresVersionMajor</key>
 	<string>4</string>
 	<key>requiresVersionMinor</key>
-	<string>0</string>
+	<string>2</string>
 	<key>timeStamp</key>
-	<real>1638539415.0848022</real>
+	<real>1639665877.117228</real>
 	<key>version</key>
 	<string>0.1</string>
 </dict>
