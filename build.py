@@ -29,6 +29,11 @@ menuItems = [
         preferredName="Install External Fonts",
         shortKey=""
     ),
+    dict(
+        path="menu_openDefaultsWindow.py",
+        preferredName="Settings",
+        shortKey=""
+    ),
 ]
 
 mainScript = "main.py"

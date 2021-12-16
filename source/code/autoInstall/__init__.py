@@ -1,11 +1,3 @@
-"""
-To Do:
-- progress indicator in app menu bar?
-- reinstall button needs to work
-- external font list isn't updated
-  when a font from the list is opened
-"""
-
 import os
 import weakref
 import tempfile
@@ -65,7 +57,7 @@ def log(*args):
 # Temp Lib Flags
 # --------------
 
-keyStub = "com.typesupply.autoInstaller."
+keyStub = extensionIdentifier + "."
 autoInstallKey = keyStub + "autoInstall"
 needsUpdateKey = keyStub + "needsUpdate"
 
@@ -181,6 +173,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.windowClearProgressBar()
         log("< subscriber._installInternalFonts")
 
+    def installInternalFontsNow(self, fonts):
+        self.stopInstallTimer()
+        self.windowClearProgressSpinner()
+        for font in fonts:
+            setFontNeedsUpdate(font, True)
+        self._installInternalFonts()
+
     # Timer
 
     installTimer = None
@@ -233,6 +232,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             setFontNeedsUpdate(font, True)
         self._installInternalFonts()
         self.windowUpdateInternalFontsTable()
+        self.windowUpdateExternalFontsTable()
         log("< subscriber.fontDocumentDidOpen")
 
     def fontDocumentDidClose(self, info):
@@ -365,14 +365,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window.updateExternalFontsTable()
 
     def addExternalFontPaths(self, paths):
-        progressBar = self.windowStartProgressBar(len(paths) * (installProgressIncrements + 1))
-        for path in paths:
-            font = OpenFont(path, showInterface=False)
-            if progressBar is not None:
-                progressBar.increment()
-            self.externalFonts[path] = font
-            installFont(font, progressBar)
-        self.windowClearProgressBar()
+        self.installExternalFontsNow(paths)
         self.windowUpdateExternalFontsTable()
 
     def getExternalFontPaths(self):
@@ -439,6 +432,18 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             return
         return self.window.startProgressBar(count=count)
 
+    # External Fonts
+
+    def installExternalFontsNow(self, paths):
+        progressBar = self.windowStartProgressBar(len(paths) * (installProgressIncrements + 1))
+        for path in paths:
+            if progressBar is not None:
+                progressBar.increment()
+            if path not in self.externalFonts:
+                self.externalFonts[path] = OpenFont(path, showInterface=False)
+            font = self.externalFonts[path]
+            installFont(font, progressBar)
+        self.windowClearProgressBar()
 
 # -----------------------
 # Glyph Editor Subscriber
@@ -682,7 +687,7 @@ class AutoInstallerWindowController(ezui.WindowController):
                 dict(
                     identifier="internalFontsTableReinstallButton",
                     type="PushButton",
-                    text="Reinstall",
+                    text="Update",
                     gravity="trailing"
                 )
             ]
@@ -715,7 +720,7 @@ class AutoInstallerWindowController(ezui.WindowController):
                 dict(
                     identifier="externalFontsTableReinstallButton",
                     type="PushButton",
-                    text="Reinstall",
+                    text="Update",
                     gravity="trailing"
                 )
             ],
@@ -815,7 +820,13 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.setInternalFontsAutoInstallStates(fonts)
 
     def internalFontsTableReinstallButtonCallback(self, sender):
-        log("xxx internalFontsTableReinstallButtonCallback")
+        table = self.w.findItem("internalFontsTable")
+        items = table.getSelectedItems()
+        if not items:
+            items = table.get()
+        fonts = [item["font"] for item in items]
+        if fonts:
+            self.subscriber.installInternalFontsNow(fonts)
 
     spinnerTimer = None
 
@@ -940,7 +951,13 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.removeExternalFontPaths(paths)
 
     def externalFontsTableReinstallButtonCallback(self, sender):
-        log("xxx internalFontsTableReinstallButtonCallback")
+        table = self.w.findItem("externalFontsTable")
+        items = table.getSelectedItems()
+        if not items:
+            items = table.get()
+        paths = [item["path"] for item in items]
+        if paths:
+            self.subscriber.installExternalFontsNow(paths)
 
 
 # ------------
@@ -949,8 +966,14 @@ class AutoInstallerWindowController(ezui.WindowController):
 
 class AutoInstallerDefaultsWindowController(ezui.WindowController):
 
+    def _get_subscriber(self):
+        if self._subscriber is not None:
+            return self._subscriber()
+
     def build(self, subscriber):
-        self.subscriber = subscriber
+        if subscriber is not None:
+            self._subscriber = weakref.ref(subscriber)
+
         extensionIdentifierLength = len(extensionIdentifier) + 1
         settings = {
             key[extensionIdentifierLength:] : getExtensionDefault(key)
@@ -1024,6 +1047,3 @@ if __name__ == "__main__":
     publishEvent(
         "AutoInstaller.OpenWindow"
     )
-    # publishEvent(
-    #     "AutoInstaller.OpenDefaultsWindow"
-    # )
