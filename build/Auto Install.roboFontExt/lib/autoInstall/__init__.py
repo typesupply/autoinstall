@@ -1,10 +1,11 @@
 import os
 import weakref
-import tempfile
+import uuid
 import AppKit
 import vanilla
 import ezui
 from lib.tools import fontInstaller
+from lib.settings import applicationTestInstallRootPath
 from mojo.UI import getDefault, setDefault
 from mojo.events import (
     publishEvent,
@@ -499,7 +500,11 @@ def installFont(font, progressBar=None):
         progressBar.increment()
     app = AppKit.NSApp()
     # compile
-    fontPath = tempfile.mkstemp()[1] + ".otf"
+    fontPath = os.path.join(
+        applicationTestInstallRootPath,
+        f"{font.info.familyName}-{font.info.styleName}_{uuid.uuid1()}.otf"
+    )
+
     publishEvent(
         "fontWillTestInstall",
         font=font.asDefcon(),
@@ -650,137 +655,109 @@ class AutoInstallerWindowController(ezui.WindowController):
         if subscriber is not None:
             self._subscriber = weakref.ref(subscriber)
 
-        # Internal Fonts
+        windowContent = """
+        !§ Open Fonts
 
-        internalFontsTitle = dict(
-            type="Label",
-            text="Open Fonts",
-            style="headline"
-        )
+        |----------------------|    @internalFontsTable
+        | [ ] O Name.ufo       |
+        | [X] O Name.ufo       |
+        |                      |
+        |----------------------|
+
+        ------------------------
+
+        !§ External Fonts
+
+        |----------------------|    @externalFontsTable
+        | Name.ufo             |
+        | Name.ufo             |
+        |                      |
+        |----------------------|
+
+        ------------------------
+        """
+
+        internalFontsTableFooter = """
+        (Update)                    @internalFontsTableReinstallButton
+        """
+
+        externalFontsTableFooter = """
+        (+-)                        @externalFontsTableAddRemoveButton
+        (Update)                    @externalFontsTableReinstallButton
+        """
+
+        windowFooter = """
+        %                           @timerProgressSpinner
+        %%---------                 @installerProgressBar
+        """
 
         iconColumnWidth = 16
-        internalFontsTable = dict(
-            identifier="internalFontsTable",
-            type="Table",
-            columnDescriptions=[
-                dict(
-                    identifier="autoInstall",
-                    width=iconColumnWidth,
-                    cellDescription=dict(
-                        cellType="Checkbox"
+        descriptionData = dict(
+
+            # Internal Fonts
+
+            internalFontsTable=dict(
+                height=150,
+                showColumnTitles=False,
+                columnDescriptions=[
+                    dict(
+                        identifier="autoInstall",
+                        width=iconColumnWidth,
+                        cellDescription=dict(
+                            cellType="Checkbox"
+                        ),
+                        editable=True
                     ),
-                    editable=True
-                ),
-                dict(
-                    identifier="installStatus",
-                    width=iconColumnWidth,
-                    cellDescription=dict(
-                        cellType="Image"
+                    dict(
+                        identifier="installStatus",
+                        width=iconColumnWidth,
+                        cellDescription=dict(
+                            cellType="Image"
+                        ),
+                        editable=False
                     ),
-                    editable=False
-                ),
-                dict(
-                    identifier="fileName",
-                    editable=False
-                )
-            ],
-            items=[],
-            showColumnTitles=False,
-            height=150,
-            footerDescription=[
-                dict(
-                    identifier="internalFontsTableReinstallButton",
-                    type="PushButton",
-                    text="Update",
-                    gravity="trailing"
-                )
-            ]
-        )
-
-        # External Fonts
-
-        externalFontsTitle = dict(
-            type="Label",
-            text="External Fonts",
-            style="headline"
-        )
-
-        externalFontsTable = dict(
-            identifier="externalFontsTable",
-            type="Table",
-            columnDescriptions=[
-                dict(
-                    identifier="fileName",
-                    editable=False
-                )
-            ],
-            showColumnTitles=False,
-            height=150,
-            footerDescription=[
-                dict(
-                    identifier="externalFontsTableAddRemoveButton",
-                    type="AddRemoveButton"
-                ),
-                dict(
-                    identifier="externalFontsTableReinstallButton",
-                    type="PushButton",
-                    text="Update",
-                    gravity="trailing"
-                )
-            ],
-            dropSettings=dict(
-                pasteboardTypes=["fileURL"],
-                dropCandidateCallback=self.externalFontsTableDropCandidateCallback,
-                performDropCallback=self.externalFontsTablePerformDropCallback
-            )
-        )
-
-        # Footer
-
-        footerDescription = [
-            dict(
-                type="ProgressSpinner",
-                identifier="timerProgressSpinner",
-                gravity="leading"
+                    dict(
+                        identifier="fileName",
+                        editable=False
+                    )
+                ],
+                footer=internalFontsTableFooter
             ),
-            dict(
-                type="ProgressBar",
-                identifier="installerProgressBar",
-                gravity="trailing"
+
+            # External Fonts
+
+            externalFontsTable = dict(
+                height=150,
+                showColumnTitles=False,
+                columnDescriptions=[
+                    dict(
+                        identifier="fileName",
+                        editable=False
+                    )
+                ],
+                footer=externalFontsTableFooter,
+                dropSettings=dict(
+                    pasteboardTypes=["fileURL"],
+                    dropCandidateCallback=self.externalFontsTableDropCandidateCallback,
+                    performDropCallback=self.externalFontsTablePerformDropCallback
+                )
             )
-        ]
-
-        # Window
-
-        windowContent = dict(
-            type="VerticalStack",
-            contentDescriptions=[
-                internalFontsTitle,
-                internalFontsTable,
-                dict(type="Line"),
-                externalFontsTitle,
-                externalFontsTable,
-                dict(type="Line")
-            ]
         )
 
-        windowDescription = dict(
-            type="Window",
-            size=(300, "auto"),
-            title="Auto Install",
+        self.w = ezui.EZWindow(
             identifier=extensionIdentifier + ".MainWindow",
-            contentDescription=windowContent,
-            footerDescription=footerDescription
-        )
-        self.w = ezui.makeItem(
-            windowDescription,
+            title="Auto Install",
+            size=(300, "auto"),
+            content=windowContent,
+            footer=windowFooter,
+            descriptionData=descriptionData,
             controller=self
         )
 
     def started(self):
         self.updateInternalFontsTable()
-        self.installerProgressBar = self.w.findItem("installerProgressBar")
-        self.timerProgressSpinner = self.w.findItem("timerProgressSpinner")
+        self.installerProgressBar = self.w.getItem("installerProgressBar")
+        self.timerProgressSpinner = self.w.getItem("timerProgressSpinner")
         self.installerProgressBar.show(False)
         self.timerProgressSpinner.show(False)
         self.w.open()
@@ -812,11 +789,11 @@ class AutoInstallerWindowController(ezui.WindowController):
                 )
             )
             items.append(item)
-        table = self.w.findItem("internalFontsTable")
+        table = self.w.getItem("internalFontsTable")
         table.set(items)
 
     def internalFontsTableEditCallback(self, sender):
-        table = self.w.findItem("internalFontsTable")
+        table = self.w.getItem("internalFontsTable")
         fonts = []
         for item in table.get():
             font = item["font"]
@@ -825,7 +802,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.setInternalFontsAutoInstallStates(fonts)
 
     def internalFontsTableReinstallButtonCallback(self, sender):
-        table = self.w.findItem("internalFontsTable")
+        table = self.w.getItem("internalFontsTable")
         items = table.getSelectedItems()
         if not items:
             items = table.get()
@@ -893,7 +870,7 @@ class AutoInstallerWindowController(ezui.WindowController):
                 fileName=os.path.basename(path)
             )
             items.append(item)
-        table = self.w.findItem("externalFontsTable")
+        table = self.w.getItem("externalFontsTable")
         table.set(items)
 
     def externalFontsTableDropCandidateCallback(self, info):
@@ -921,7 +898,7 @@ class AutoInstallerWindowController(ezui.WindowController):
             font.path for font in AllFonts()
         ]
         externalFonts = [
-            item["path"] for item in self.w.findItem("externalFontsTable").get()
+            item["path"] for item in self.w.getItem("externalFontsTable").get()
         ]
         paths = [
             path for path in paths
@@ -946,7 +923,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.addExternalFontPaths(paths)
 
     def externalFontsTableAddRemoveButtonRemoveCallback(self, sender):
-        table = self.w.findItem("externalFontsTable")
+        table = self.w.getItem("externalFontsTable")
         selection = table.getSelectedIndexes()
         items = table.get()
         paths = [
@@ -956,7 +933,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.subscriber.removeExternalFontPaths(paths)
 
     def externalFontsTableReinstallButtonCallback(self, sender):
-        table = self.w.findItem("externalFontsTable")
+        table = self.w.getItem("externalFontsTable")
         items = table.getSelectedItems()
         if not items:
             items = table.get()
@@ -987,60 +964,46 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
             for key in defaults.keys()
         }
 
-        formContents = dict(
-            identifier="settingsForm",
-            type="OneColumnForm",
-            contentDescriptions=[
-                "# Update Install",
-                dict(
-                    identifier="installAfterChangeDelay",
-                    type="TextField",
-                    trailingText="seconds after a change",
-                    value=settings["installAfterChangeDelay"],
-                    valueType="integer",
-                    width=185
-                ),
-                dict(
-                    identifier="installAfterSave",
-                    type="Checkbox",
-                    text="after saving the font",
-                    value=settings["installAfterSave"]
-                ),
-                dict(
-                    identifier="installAfterAppExit",
-                    type="Checkbox",
-                    text="after exiting RoboFont",
-                    value=settings["installAfterAppExit"]
-                )
+        content = """
+        !§ Update Install
+        [___] seconds after a change    @installAfterChangeDelay
+        [ ] after saving the font       @installAfterSave
+        - # temp hack
+        [ ] after exiting RoboFont      @installAfterAppExit
+        """
 
-            ]
+        descriptionData = dict(
+            installAfterChangeDelay=dict(
+                width=185,
+                value=settings["installAfterChangeDelay"],
+                valueType="integer"
+            ),
+            installAfterSave=dict(
+                value=settings["installAfterSave"]
+            ),
+            installAfterAppExit=dict(
+                value=settings["installAfterAppExit"]
+            )
         )
-
-        windowDescription = dict(
-            type="Window",
-            # title="Auto Installer Settings",
+        self.w = ezui.EZWindow(
             identifier=extensionIdentifier + ".DefaultsWindow",
             size="auto",
-            contentDescription=formContents
-        )
-
-        self.w = ezui.makeItem(
-            windowDescription,
+            content=content,
+            descriptionData=descriptionData,
             controller=self
         )
 
     def started(self):
         self.w.open()
 
+    def destroy(self):
+        self._subscriber = None
+
     def windowWillClose(self, sender):
         self.subscriber.defaultsWindow = None
-        self.subscriber = None
-
-    def settingsFormCallback(self, sender):
-        self.storeSettings()
 
     def storeSettings(self):
-        settings = self.w.get()["settingsForm"]
+        settings = self.w.getItemValues()
         if settings["installAfterChangeDelay"] is None:
             return
         for key, value in settings.items():
@@ -1049,6 +1012,15 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
         postEvent(
             extensionIdentifier + ".defaultsChanged"
         )
+
+    def installAfterChangeDelayCallback(self, sender):
+        self.storeSettings()
+
+    def installAfterSaveCallback(self, sender):
+        self.storeSettings()
+
+    def installAfterAppExitCallback(self, sender):
+        self.storeSettings()
 
 
 if __name__ == "__main__":
