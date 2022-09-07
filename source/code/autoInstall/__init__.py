@@ -260,12 +260,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
 
     def fontDocumentDidClose(self, info):
         log("> subscriber.fontDocumentDidClose")
-        font = self._fontThatIsClosing
-        del self._fontThatIsClosing
-        if fontIsAutoInstalled(font):
-            self._removeInternalFont(font)
-            uninstallFont(font)
-            self.addExternalFontPaths([font.path])
+        if hasattr(self, "_fontThatIsClosing"):
+            font = self._fontThatIsClosing
+            del self._fontThatIsClosing
+            if fontIsAutoInstalled(font):
+                self._removeInternalFont(font)
+                uninstallFont(font)
+                self.addExternalFontPaths([font.path])
         self.windowUpdateInternalFontsTable()
         log("< subscriber.fontDocumentDidClose")
 
