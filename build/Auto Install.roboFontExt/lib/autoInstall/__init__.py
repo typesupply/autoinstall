@@ -392,7 +392,6 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window.updateExternalFontsTable()
 
     def addExternalFontPaths(self, paths):
-        print("> addExternalFontPaths", paths)
         self.installExternalFontsNow(paths)
         self.windowUpdateExternalFontsTable()
 
