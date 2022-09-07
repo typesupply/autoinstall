@@ -120,6 +120,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             "extensionDefaultsChanged",
             extensionIdentifier + ".defaultsChanged"
         )
+        addObserver(self, "registerForWorkspaces", "Workspaces.RegisterWindowOpeners")
 
     def started(self):
         log("> subscriber.started")
@@ -153,6 +154,15 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
 
     def extensionDefaultsChanged(self, event):
         self.loadDefaults()
+
+    # Workspaces
+
+    def registerForWorkspaces(self, info):
+        info["register"]("Auto Install Window", self.workspacesWindowOpener)
+
+    def workspacesWindowOpener(self):
+        self.autoInstallerOpenWindow({})
+        return self.window
 
     # Install
 
@@ -753,6 +763,7 @@ class AutoInstallerWindowController(ezui.WindowController):
             descriptionData=descriptionData,
             controller=self
         )
+        self.w.workspaceWindowIdentifier = "Auto Install Window"
 
     def started(self):
         self.updateInternalFontsTable()
