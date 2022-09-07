@@ -248,12 +248,24 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.windowUpdateExternalFontsTable()
         log("< subscriber.fontDocumentDidOpen")
 
+    def fontDocumentWillClose(self, info):
+        log("> subscriber.fontDocumentWillClose")
+        # XXX
+        # fontDocumentDidClose is not getting the font
+        # in the info dict, so store the font here
+        # so that reinstall can happen if needed.
+        font = info["font"]
+        self._fontThatIsClosing = font
+        log("< subscriber.fontDocumentWillClose")
+
     def fontDocumentDidClose(self, info):
         log("> subscriber.fontDocumentDidClose")
-        font = info["font"]
+        font = self._fontThatIsClosing
+        del self._fontThatIsClosing
         if fontIsAutoInstalled(font):
             self._removeInternalFont(font)
             uninstallFont(font)
+            self.addExternalFontPaths([font.path])
         self.windowUpdateInternalFontsTable()
         log("< subscriber.fontDocumentDidClose")
 
@@ -380,6 +392,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window.updateExternalFontsTable()
 
     def addExternalFontPaths(self, paths):
+        print("> addExternalFontPaths", paths)
         self.installExternalFontsNow(paths)
         self.windowUpdateExternalFontsTable()
 
