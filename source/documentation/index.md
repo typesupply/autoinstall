@@ -8,7 +8,7 @@ This list shows all open fonts. If you want one of the fonts to be auto installe
 
 ### External Fonts
 
-Drag UFOs from the Finder to this list and they will be installed. Use the plus/minus buttons to add/remove UFOs. This does not monitor the fonts for changes made outside of RoboFont, so if you make a change to a font and need to update it, press the "Update" button.
+Drag UFOs from the Finder to this list and they will be installed. Use the plus/minus buttons to add/remove UFOs. This does not monitor the fonts for changes made outside of RoboFont, so if you make a change to a font and need to update it, press the "Update" button. If you want to open a font in the list, double click it.
 
 ### Footer
 

@@ -897,6 +897,11 @@ class AutoInstallerWindowController(ezui.WindowController):
         table = self.w.getItem("externalFontsTable")
         table.set(items)
 
+    def externalFontsTableDoubleClickCallback(self, sender):
+        items = sender.getSelectedItems()
+        for item in items:
+            OpenFont(item["path"])
+
     def externalFontsTableDropCandidateCallback(self, info):
         paths = self._normalizeDroppedItems(info)
         if not paths:
