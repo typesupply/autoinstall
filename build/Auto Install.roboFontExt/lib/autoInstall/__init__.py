@@ -745,7 +745,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         )
 
         self.w = ezui.EZWindow(
-            identifier=extensionIdentifier + ".MainWindow",
+            autosaveName=extensionIdentifier + ".MainWindow",
             title="Auto Install",
             size=(300, "auto"),
             content=windowContent,
