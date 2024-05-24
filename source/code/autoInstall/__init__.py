@@ -348,6 +348,13 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.resetInstallTimer()
         log("< subscriber.autoInstallerGlyphEditorActivity")
 
+    # MetricsMachine Activity
+
+    def autoInstallMetricsMachineCurrentPairDidChange(self, info):
+        log("> subscriber.autoInstallMetricsMachineCurrentPairDidChange")
+        self.resetInstallTimer()
+        log("< subscriber.autoInstallMetricsMachineCurrentPairDidChange")
+
     # Menu Support
 
     def autoInstallerOpenWindow(self, info):
@@ -630,6 +637,13 @@ def genericEventRegisterDict(**kwargs):
     return default
 
 customEventsToRegister = [
+    # MetricsMachine
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstall.MetricsMachine.currentPairChanged",
+        methodName="autoInstallMetricsMachineCurrentPairDidChange",
+        lowLevelEventNames=["MetricsMachine.currentPairChanged"]
+    ),
+    # Internal
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.OpenWindow"
     ),
@@ -658,7 +672,6 @@ for event in customEventsToRegister:
 
 registerRoboFontSubscriber(AutoInstallerRoboFontSubscriber)
 registerGlyphEditorSubscriber(AutoInstallerGlyphEditorSubscriber)
-
 
 # ------
 # Window
@@ -768,7 +781,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         )
 
         self.w = ezui.EZWindow(
-            identifier=extensionIdentifier + ".MainWindow",
+            autosaveName=extensionIdentifier + ".MainWindow",
             title="Auto Install",
             size=(300, "auto"),
             content=windowContent,
@@ -782,8 +795,8 @@ class AutoInstallerWindowController(ezui.WindowController):
         self.updateInternalFontsTable()
         self.installerProgressBar = self.w.getItem("installerProgressBar")
         self.timerProgressSpinner = self.w.getItem("timerProgressSpinner")
-        self.installerProgressBar.show(False)
-        self.timerProgressSpinner.show(False)
+        # self.installerProgressBar.show(False)
+        # self.timerProgressSpinner.show(False)
         self.w.open()
 
     def destroy(self):
@@ -839,7 +852,7 @@ class AutoInstallerWindowController(ezui.WindowController):
     def clearProgressSpinner(self):
         if self.spinnerTimer is not None:
             self.spinnerTimer.invalidate()
-        self.timerProgressSpinner.show(False)
+        # self.timerProgressSpinner.show(False)
         self.timerProgressSpinner.set(0)
         self.spinnerTimer = None
 
@@ -858,7 +871,7 @@ class AutoInstallerWindowController(ezui.WindowController):
         )
         self.timerProgressSpinner.getNSProgressIndicator().setMaxValue_(count)
         self.timerProgressSpinner.set(0)
-        self.timerProgressSpinner.show(True)
+        # self.timerProgressSpinner.show(True)
 
     def spinnerTimerFire_(self, timer):
         info = timer.userInfo()
@@ -873,7 +886,7 @@ class AutoInstallerWindowController(ezui.WindowController):
 
     def clearProgressBar(self):
         self.installerProgressBar.set(0)
-        self.installerProgressBar.show(False)
+        # self.installerProgressBar.show(False)
 
     def startProgressBar(self, count=None):
         self.installerProgressBar.set(0)
@@ -881,7 +894,7 @@ class AutoInstallerWindowController(ezui.WindowController):
             return
         self.installerProgressBar.getNSProgressIndicator().setMaxValue_(count)
         self.installerProgressBar.set(0)
-        self.installerProgressBar.show(True)
+        # self.installerProgressBar.show(True)
         return self.installerProgressBar
 
     # External Fonts
@@ -1015,7 +1028,7 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
             )
         )
         self.w = ezui.EZWindow(
-            identifier=extensionIdentifier + ".DefaultsWindow",
+            autosaveName=extensionIdentifier + ".DefaultsWindow",
             size="auto",
             content=content,
             descriptionData=descriptionData,
