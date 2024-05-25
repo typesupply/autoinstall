@@ -371,6 +371,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         self.window = AutoInstallerWindowController(self)
         self.windowUpdateInternalFontsTable()
         self.windowUpdateExternalFontsTable()
+        self.windowUpdateDesignspacesTable()
 
     def autoInstallerAddCurrentFont(self, info):
         self.setInternalFontsAutoInstallStates([(CurrentFont(), True)])
@@ -676,7 +677,6 @@ def uninstallFont(font):
 def installDesignspace(designspacePath, previousFontPaths=[], progressBar=None):
     if progressBar is not None:
         progressBar.increment()
-    app = AppKit.NSApp()
     # compile
     publishEvent(
         "designspaceWillTestInstall",
@@ -782,12 +782,12 @@ import pathlib
 import tempfile
 from fontTools import ttLib
 from fontTools.designspaceLib import DesignSpaceDocument
-from batch import (
-    variableFontsGenerator,
-    Report
-)
 
 def _buildDesignspace(designspacePath, progressBar=None):
+    from batch import (
+        variableFontsGenerator,
+        Report
+    )
     directory = pathlib.Path(designspacePath).parent
     root = directory.joinpath("_AutoInstall")
     built = []
@@ -1329,7 +1329,6 @@ class AutoInstallerDefaultsWindowController(ezui.WindowController):
         !§ Update Install
         [___] seconds after a change    @installAfterChangeDelay
         [ ] after saving the font       @installAfterSave
-        - # temp hack
         [ ] after exiting RoboFont      @installAfterAppExit
         """
 
