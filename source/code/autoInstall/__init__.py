@@ -28,6 +28,12 @@ from mojo.extensions import (
 from mojo.events import postEvent
 from mojo.roboFont import AllFonts, CurrentFont, OpenFont
 
+try:
+    from prepolator import OpenPrepolator
+    havePrepolator = True
+except ModuleNotFoundError:
+    havePrepolator = False
+
 extensionIdentifier = "com.typesupply.AutoInstall"
 
 # ---------
@@ -676,7 +682,33 @@ def installDesignspace(designspacePath, previousFontPaths=[], progressBar=None):
         "designspaceWillTestInstall",
         path=designspacePath
     )
-    fontPaths = _buildDesignspace(designspacePath, progressBar=None)
+    compile = True
+    if havePrepolator:
+        prepDoc = OpenPrepolator(
+            designspacePath=designspacePath,
+            showInterface=False
+        )
+        prepDoc.strictOffCurves = True
+        prepDoc.strictComponents = True
+        prepDoc.strictAnchors = False
+        prepDoc.strictGuidelines = False
+        for discreteLocation in prepDoc.getCompatibilitySpaceIdentifiers():
+            for glyphName in prepDoc.getCompatibilitySpaceGlyphNames(discreteLocation):
+                group = prepDoc.getCompatibilityGroupForGlyphName(glyphName, discreteLocation)
+                if group.unresolvableCompatibility:
+                    compile = False
+                    print(f"Unresolvable Compatibility: {glyphName}")
+                else:
+                    for glyph in group.glyphs:
+                        if group.getGlyphIsIncompatible(glyph):
+                            group.matchModel(glyphs=[glyph])
+                        elif group.getGlyphConfidence(glyph) <= 0.9:
+                            group.matchModel(glyphs=[glyph])
+        prepDoc.saveFonts()
+    if not compile:
+        fontPaths = []
+    else:
+        fontPaths = _buildDesignspace(designspacePath, progressBar=None)
     if progressBar is not None:
         progressBar.increment()
     # remove old
