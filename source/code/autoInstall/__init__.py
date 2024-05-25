@@ -381,6 +381,23 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
         if paths:
             self.addExternalFontPaths(paths)
 
+    def autoInstallerAddCurrentFont(self, info):
+        designspace = CurrentDesignspace()
+        if designspace is None:
+            return
+        path = designspace.path
+        if not path:
+            return
+        self.addDesignspacePaths([path])
+
+    def autoInstallerAddDesignspaces(self, info):
+        paths = vanilla.dialogs.getFile(
+            allowsMultipleSelection=True,
+            fileTypes=["designspace"]
+        )
+        if paths:
+            self.addDesignspacePaths(paths)
+
     def autoInstallerOpenDefaultsWindow(self, info):
         if self.defaultsWindow is not None:
             return
@@ -820,6 +837,12 @@ customEventsToRegister = [
     ),
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.AddExternalFonts"
+    ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.AddCurrentDesignspace"
+    ),
+    genericEventRegisterDict(
+        subscriberEventName="AutoInstaller.AddDesignspaces"
     ),
     genericEventRegisterDict(
         subscriberEventName="AutoInstaller.GlyphEditorActivity"

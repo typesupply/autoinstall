@@ -30,6 +30,16 @@ menuItems = [
         shortKey=""
     ),
     dict(
+        path="menu_addCurrentDesignspace.py",
+        preferredName="Install Current Designspace",
+        shortKey=""
+    ),
+    dict(
+        path="menu_addDesignspaces.py",
+        preferredName="Install Designspaces",
+        shortKey=""
+    ),
+    dict(
         path="menu_openDefaultsWindow.py",
         preferredName="Edit Preferences",
         shortKey=""
