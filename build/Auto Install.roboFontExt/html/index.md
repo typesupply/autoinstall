@@ -10,6 +10,10 @@ This list shows all open fonts. If you want one of the fonts to be auto installe
 
 Drag UFOs from the Finder to this list and they will be installed. Use the plus/minus buttons to add/remove UFOs. This does not monitor the fonts for changes made outside of RoboFont, so if you make a change to a font and need to update it, press the "Update" button. If you want to open a font in the list, double click it.
 
+### Designspaces
+
+Drag designspaces from the Finder to this list and any fonts they produce will be installed. Use the plus/minus buttons to add/remove designspaces. This does not monitor the designspaces or the sources in the designspaces for changes, so if you make a change to a designspace or source and need to update it, press the "Update" button. If you want to open a designspace in the list in Design Space Editor, double click it. During the build of the designspace, if Prepolator is availabe it will be used to automatically correct resolvable incompatibilities in glyphs and it will try to find the correct ordering for glyphs with low compatibility confidence.
+
 ### Footer
 
 When a change is detected, a timer will appear showing how long it will be before the font is compiled and installed. While a font is being installed, a progress bar will show you the, you guessed it, progress.
