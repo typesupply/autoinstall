@@ -38,6 +38,22 @@
 		</dict>
 		<dict>
 			<key>path</key>
+			<string>menu_addCurrentDesignspace.py</string>
+			<key>preferredName</key>
+			<string>Install Current Designspace</string>
+			<key>shortKey</key>
+			<string></string>
+		</dict>
+		<dict>
+			<key>path</key>
+			<string>menu_addDesignspaces.py</string>
+			<key>preferredName</key>
+			<string>Install Designspaces</string>
+			<key>shortKey</key>
+			<string></string>
+		</dict>
+		<dict>
+			<key>path</key>
 			<string>menu_openDefaultsWindow.py</string>
 			<key>preferredName</key>
 			<string>Edit Preferences</string>
@@ -60,10 +76,10 @@
 	<key>requiresVersionMajor</key>
 	<string>4</string>
 	<key>requiresVersionMinor</key>
-	<string>2</string>
+	<string>5</string>
 	<key>timeStamp</key>
-	<real>1675195943.7805829</real>
+	<real>1716654566.605506</real>
 	<key>version</key>
-	<string>0.1</string>
+	<string>0.2</string>
 </dict>
 </plist>

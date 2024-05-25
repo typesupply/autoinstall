@@ -3,11 +3,10 @@
 # -----------------
 
 name = "Auto Install"
-version = "0.1"
+version = "0.2"
 developer = "Type Supply"
 developerURL = "http://typesupply.com"
-roboFontVersion = "4.2"
-pycOnly = False
+roboFontVersion = "4.5"
 menuItems = [
     dict(
         path="menu_openWindow.py",
@@ -27,6 +26,16 @@ menuItems = [
     dict(
         path="menu_addExternalFonts.py",
         preferredName="Install External Fonts",
+        shortKey=""
+    ),
+    dict(
+        path="menu_addCurrentDesignspace.py",
+        preferredName="Install Current Designspace",
+        shortKey=""
+    ),
+    dict(
+        path="menu_addDesignspaces.py",
+        preferredName="Install Designspaces",
         shortKey=""
     ),
     dict(
@@ -115,7 +124,7 @@ if os.path.exists(requirementsPath):
     with open(requirementsPath) as requirements:
         B.requirements = requirements.read()
 print("Building extension...", end=" ")
-v = B.save(extensionPath, libPath=libPath, pycOnly=pycOnly, htmlPath=docPath, resourcesPath=resourcesPath)
+v = B.save(extensionPath, libFolder=libPath, htmlFolder=docPath, resourcesFolder=resourcesPath)
 print("done!")
 errors = B.validationErrors()
 if errors:
