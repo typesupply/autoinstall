@@ -1,4 +1,5 @@
 import os
+import shutil
 import weakref
 import uuid
 import AppKit
@@ -114,6 +115,7 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
 
     def build(self):
         self.externalFonts = {}
+        self.designspaces = {}
         self.loadDefaults()
         addObserver(
             self,
@@ -399,6 +401,11 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             return
         self.window.updateExternalFontsTable()
 
+    def windowUpdateDesignspacesTable(self):
+        if self.window is None:
+            return
+        self.window.updateDesignspacesTable()
+
     def addExternalFontPaths(self, paths):
         self.installExternalFontsNow(paths)
         self.windowUpdateExternalFontsTable()
@@ -412,6 +419,19 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             uninstallFont(font)
             font.close()
         self.windowUpdateExternalFontsTable()
+
+    def addDesignspacePaths(self, paths):
+        self.installDesignspacesNow(paths)
+        self.windowUpdateDesignspacesTable()
+
+    def getDesignspacePaths(self):
+        return list(self.designspaces.keys())
+
+    def removeDesignspacePaths(self, paths):
+        for path in paths:
+            fontPaths = self.designspaces.pop(path)
+            uninstallDesignspace(path, fontPaths)
+        self.windowUpdateDesignspacesTable()
 
     def setInternalFontsAutoInstallStates(self, fonts):
         for font, autoInstall in fonts:
@@ -478,6 +498,21 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
                 self.externalFonts[path] = OpenFont(path, showInterface=False)
             font = self.externalFonts[path]
             installFont(font, progressBar)
+        self.windowClearProgressBar()
+
+    # Designspaces
+
+    def installDesignspacesNow(self, paths):
+        progressBar = self.windowStartProgressBar(len(paths) * (installProgressIncrements + 1))
+        for path in paths:
+            if progressBar is not None:
+                progressBar.increment()
+            fontPaths = installDesignspace(
+                path,
+                previousFontPaths=self.designspaces.get(path, []),
+                progressBar=progressBar
+            )
+            self.designspaces[path] = fontPaths
         self.windowClearProgressBar()
 
 # -----------------------
@@ -615,6 +650,136 @@ def uninstallFont(font):
             font=font.asDefcon()
         )
 
+def installDesignspace(designspacePath, previousFontPaths=[], progressBar=None):
+    if progressBar is not None:
+        progressBar.increment()
+    app = AppKit.NSApp()
+    # compile
+    publishEvent(
+        "designspaceWillTestInstall",
+        path=designspacePath
+    )
+    fontPaths = _buildDesignspace(designspacePath, progressBar=None)
+    if progressBar is not None:
+        progressBar.increment()
+    # remove old
+    uninstallDesignspace(
+        designspacePath,
+        list(set(fontPaths + previousFontPaths)),
+        doNotRemove=fontPaths
+    )
+    if progressBar is not None:
+        progressBar.increment()
+    # install new
+    installedFontPaths = []
+    for fontPath in fontPaths:
+        didInstall, report = fontInstaller.installFont(fontPath, False)
+        if didInstall:
+            installedFontPaths.append(fontPath)
+        else:
+            print(f"Error installing {fontPath}.")
+            print(report)
+    if installedFontPaths:
+        doodleTestInstalledFonts = dict(getDefault("DoodleTestInstalledFonts", {}))
+        for fontPath in installedFontPaths:
+            fontIdentifier = dict(
+                fontPath=fontPath,
+                name=os.path.basename(fontPath)
+            )
+            # XXX
+            # don't store a reference to the font object
+            # because there is no font to reference:
+            # app._installedFonts[font.asDefcon()] = fontIdentifier
+            doodleTestInstalledFonts[fontPath] = fontIdentifier
+        setDefault("DoodleTestInstalledFonts", doodleTestInstalledFonts)
+    if installedFontPaths:
+        publishEvent(
+            "designspaceDidTestInstall",
+            path=designspacePath,
+            fontPaths=installedFontPaths
+        )
+    if progressBar is not None:
+        progressBar.increment()
+    return fontPaths
+
+def uninstallDesignspace(designspacePath, fontPaths, doNotRemove=[]):
+    # XXX
+    # no need to get the font object from the
+    # app because there is no reference there.
+    publishEvent(
+        "designspaceWillTestDeinstall",
+        path=designspacePath,
+        fontPaths=fontPaths
+    )
+    doodleTestInstalledFonts = dict(getDefault("DoodleTestInstalledFonts", {}))
+    for fontPath in fontPaths:
+        fontInstaller.uninstallFont(fontPath)
+        if os.path.exists(fontPath) and fontPath not in doNotRemove:
+            os.remove(fontPath)
+        if fontPath in doodleTestInstalledFonts:
+            doodleTestInstalledFonts[fontPath]
+    setDefault("DoodleTestInstalledFonts", doodleTestInstalledFonts)
+    publishEvent(
+        "designspaceDidTestDeinstall",
+        path=designspacePath,
+        fontPaths=fontPaths
+    )
+
+# XXX
+# This designspace compiler is temporary until the Batch API is ready.
+
+import os
+import pathlib
+import tempfile
+from fontTools import ttLib
+from fontTools.designspaceLib import DesignSpaceDocument
+from batch import (
+    variableFontsGenerator,
+    Report
+)
+
+def _buildDesignspace(designspacePath, progressBar=None):
+    directory = pathlib.Path(designspacePath).parent
+    root = directory.joinpath("_AutoInstall")
+    built = []
+    with tempfile.TemporaryDirectory() as tempRoot:
+        report = Report()
+        variableFontsGenerator.build(
+            root=tempRoot,
+            generateOptions=dict(
+                variableFontGenerate_OTF=False,
+                variableFontGenerate_OTFWOFF2=False,
+                variableFontGenerate_TTF=True,
+                variableFontGenerate_TTFWOFF2=False,
+                sourceDesignspacePaths=[
+                    str(designspacePath)
+                ]
+            ),
+            settings=dict(
+                variableFontsAutohint=False,
+                variableFontsInterpolateToFitAxesExtremes=False,
+                batchSettingExportDebug=False,
+                batchSettingExportInSubFolders=False
+            ),
+            progress=progressBar,
+            report=report
+        )
+        report = report.get()
+        if "Generate failed" in report:
+            print(report)
+        if not root.exists():
+            root.mkdir()
+        for tempPath in pathlib.Path(tempRoot).joinpath("Variable").glob("*.ttf"):
+            path = root.joinpath(tempPath.name)
+            if path.exists():
+                os.remove(path)
+            os.rename(
+                tempPath,
+                path
+            )
+            built.append(str(path))
+    return built
+
 # -------------
 # Custom Events
 # -------------
@@ -692,48 +857,51 @@ class AutoInstallerWindowController(ezui.WindowController):
             self._subscriber = weakref.ref(subscriber)
 
         windowContent = """
-        !§ Open Fonts
+        = Tabs
 
-        |----------------------|    @internalFontsTable
-        | [ ] O Name.ufo       |
-        | [X] O Name.ufo       |
-        |                      |
-        |----------------------|
+        * Tab: Open                   @openFontsTab
 
-        ------------------------
+        > |----------------------|    @internalFontsTable
+        > | [ ] O Name.ufo       |
+        > | [X] O Name.ufo       |
+        > |                      |
+        > |----------------------|
+        >> (Update)                   @internalFontsTableReinstallButton
 
-        !§ External Fonts
+        * Tab: External               @externalFontsTab
 
-        |----------------------|    @externalFontsTable
-        | Name.ufo             |
-        | Name.ufo             |
-        |                      |
-        |----------------------|
+        > |----------------------|    @externalFontsTable
+        > | Name.ufo             |
+        > | Name.ufo             |
+        > |                      |
+        > |----------------------|
+        >> (+-)                       @externalFontsTableAddRemoveButton
+        >> (Update)                   @externalFontsTableReinstallButton
 
-        ------------------------
-        """
+        * Tab: Designspaces           @designspacesTab
 
-        internalFontsTableFooter = """
-        (Update)                    @internalFontsTableReinstallButton
-        """
+        > |----------------------|    @designspacesTable
+        > | Name.designspace     |
+        > | Name.designspace     |
+        > |                      |
+        > |----------------------|
+        >> (+-)                       @designspacesTableAddRemoveButton
+        >> (Update)                   @designspacesTableReinstallButton
 
-        externalFontsTableFooter = """
-        (+-)                        @externalFontsTableAddRemoveButton
-        (Update)                    @externalFontsTableReinstallButton
-        """
+        ==========================
 
-        windowFooter = """
         %                           @timerProgressSpinner
         %%---------                 @installerProgressBar
         """
 
         iconColumnWidth = 16
+        tableHeight = 250
         descriptionData = dict(
 
             # Internal Fonts
 
             internalFontsTable=dict(
-                height=150,
+                height=tableHeight,
                 showColumnTitles=False,
                 columnDescriptions=[
                     dict(
@@ -757,13 +925,12 @@ class AutoInstallerWindowController(ezui.WindowController):
                         editable=False
                     )
                 ],
-                footer=internalFontsTableFooter
             ),
 
             # External Fonts
 
             externalFontsTable = dict(
-                height=150,
+                height=tableHeight,
                 showColumnTitles=False,
                 columnDescriptions=[
                     dict(
@@ -771,21 +938,38 @@ class AutoInstallerWindowController(ezui.WindowController):
                         editable=False
                     )
                 ],
-                footer=externalFontsTableFooter,
                 dropSettings=dict(
                     pasteboardTypes=["fileURL"],
                     dropCandidateCallback=self.externalFontsTableDropCandidateCallback,
                     performDropCallback=self.externalFontsTablePerformDropCallback
                 )
+            ),
+
+            # Designspaces
+
+            designspacesTable = dict(
+                height=tableHeight,
+                showColumnTitles=False,
+                columnDescriptions=[
+                    dict(
+                        identifier="fileName",
+                        editable=False
+                    )
+                ],
+                dropSettings=dict(
+                    pasteboardTypes=["fileURL"],
+                    dropCandidateCallback=self.designspacesTableDropCandidateCallback,
+                    performDropCallback=self.designspacesTablePerformDropCallback
+                )
             )
+
         )
 
         self.w = ezui.EZWindow(
             autosaveName=extensionIdentifier + ".MainWindow",
             title="Auto Install",
-            size=(300, "auto"),
+            size=(320, "auto"),
             content=windowContent,
-            footer=windowFooter,
             descriptionData=descriptionData,
             controller=self
         )
@@ -983,6 +1167,86 @@ class AutoInstallerWindowController(ezui.WindowController):
         if paths:
             self.subscriber.installExternalFontsNow(paths)
 
+    # Designspaces
+
+    def updateDesignspacesTable(self):
+        items = []
+        for path in self.subscriber.getDesignspacePaths():
+            item = dict(
+                path=path,
+                fileName=os.path.basename(path)
+            )
+            items.append(item)
+        table = self.w.getItem("designspacesTable")
+        table.set(items)
+
+    def designspacesTableDoubleClickCallback(self, sender):
+        items = sender.getSelectedItems()
+        for item in items:
+            OpenDesignspace(item["path"])
+
+    def designspacesTableDropCandidateCallback(self, info):
+        paths = self._normalizeDroppedDesignspaceItems(info)
+        if not paths:
+            return "none"
+        return "link"
+
+    def designspacesTablePerformDropCallback(self, info):
+        paths = self._normalizeDroppedDesignspaceItems(info)
+        self.subscriber.addDesignspacePaths(paths)
+        return True
+
+    def _normalizeDroppedDesignspaceItems(self, info):
+        sender = info["sender"]
+        items = info["items"]
+        items = sender.getDropItemValues(items)
+        paths = [
+            item.path() for item in items
+        ]
+        return self._normalizeSelectedDesignspacePaths(paths)
+
+    def _normalizeSelectedDesignspacePaths(self, paths):
+        table = self.w.getItem("designspacesTable")
+        existing = [item["path"] for item in table.get()]
+        paths = [
+            path for path in paths
+            if os.path.splitext(path)[-1].lower() in (".designspace")
+        ]
+        paths = [
+            path for path in paths
+            if path not in existing
+        ]
+        return paths
+
+    def designspacesTableAddRemoveButtonAddCallback(self, sender):
+        self.showGetFile(
+            ["designspace"],
+            self._designspacesTableGetFileCallback,
+            allowsMultipleSelection=True
+        )
+
+    def _designspacesTableGetFileCallback(self, paths):
+        paths = self._normalizeSelectedDesignspacePaths(paths)
+        self.subscriber.addDesignspacePaths(paths)
+
+    def designspacesTableAddRemoveButtonRemoveCallback(self, sender):
+        table = self.w.getItem("designspacesTable")
+        selection = table.getSelectedIndexes()
+        items = table.get()
+        paths = [
+            items[i]["path"]
+            for i in selection
+        ]
+        self.subscriber.removeDesignspacePaths(paths)
+
+    def designspacesTableReinstallButtonCallback(self, sender):
+        table = self.w.getItem("designspacesTable")
+        items = table.getSelectedItems()
+        if not items:
+            items = table.get()
+        paths = [item["path"] for item in items]
+        if paths:
+            self.subscriber.installDesignspacesNow(paths)
 
 # ------------
 # Prefs Window
