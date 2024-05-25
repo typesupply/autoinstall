@@ -149,7 +149,10 @@ class AutoInstallerRoboFontSubscriber(Subscriber):
             uninstallFont(font)
             setFontIsAutoInstalled(font, False)
             font.close()
+        for path, fontPaths in self.designspaces.items():
+            uninstallDesignspace(path, fontPaths)
         self.externalFonts = {}
+        self.designspaces = {}
         log("< subscriber.destroy")
 
     # defaults
@@ -766,13 +769,19 @@ def uninstallDesignspace(designspacePath, fontPaths, doNotRemove=[]):
         if os.path.exists(fontPath) and fontPath not in doNotRemove:
             os.remove(fontPath)
         if fontPath in doodleTestInstalledFonts:
-            doodleTestInstalledFonts[fontPath]
+            del doodleTestInstalledFonts[fontPath]
     setDefault("DoodleTestInstalledFonts", doodleTestInstalledFonts)
     publishEvent(
         "designspaceDidTestDeinstall",
         path=designspacePath,
         fontPaths=fontPaths
     )
+    designspacePath = pathlib.Path(designspacePath)
+    directory = designspacePath.parent.joinpath("_AutoInstall")
+    if directory.exists():
+        contents = list(directory.iterdir())
+        if not contents:
+            shutil.rmtree(directory)
 
 # XXX
 # This designspace compiler is temporary until the Batch API is ready.
